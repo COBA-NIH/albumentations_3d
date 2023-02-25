@@ -5,7 +5,7 @@ import random
 import scipy
 import elasticdeform
 from collections.abc import Iterable
-import functional as F
+from . import aug_functional as F
 
 
 class Compose:
@@ -94,7 +94,8 @@ class DualTransform(Transform):
             params = self.get_params(**data)
             # self.paired == True means that image and mask
             # will have the same transforms applied equally
-            if self.paired and ["weight_map"] not in targets:
+            if self.paired and (["weight_map"] not in targets):
+                print(targets)
                 image, mask = self.apply(**data)
                 # Add paired transforms back into the expected
                 # dictionary keys
@@ -455,7 +456,6 @@ class ElasticDeform(DualTransform):
     def apply(self, image, mask, weight_map=None):
         """Convert 4D (multiple channel) input images or wmap
         into a flattened list of 3D arrays for elasticdeform"""
-        # Detect how many channels
         if mask.ndim == 4:
             # Channel dim is added if using patch data loader
             mask = mask[0] # [0] to remove channel index
@@ -494,7 +494,8 @@ class ElasticDeform(DualTransform):
         image = np.stack(data[0:num_channels], axis=0)
 
         if weight_map is not None:
-            weight_map = np.stack(data[num_channels+1:], axis=0)
+            # weight_map = np.stack(data[num_channels+1:], axis=0)
+            weight_map = data[num_channels+1:][0]
             return image, data[num_channels], weight_map
         else:
             return image, data[num_channels]  # [num_channels] is the mask index
