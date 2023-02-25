@@ -4,6 +4,8 @@
 
 Augmentations such as blur will **only** be applied to `image`. Augmentations such as `elastic_deform` will be applied to `image`, `mask` **and** `weight_map`.
 
+This library was used in training a UNet edge detector for instance segmentation of the *C. elegans* germline, [found here](https://github.com/callum-jpg/UNet_3D_C_elegans).
+
 # Examples
 See the [example notebook](examples.ipynb).
 ## Flip
