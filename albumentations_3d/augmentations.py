@@ -419,19 +419,12 @@ class RandomRot90(DualTransform):
         return {"rotations": np.random.randint(0, 4)}
 
     def apply(self, image, rotations):
-        if isinstance(image, list):
-            for i, ch_img in enumerate(image):
-                image[i] = np.rot90(ch_img, rotations, axes=self.axis)
-            return image
-        else:
-            return np.rot90(image, rotations, axes=self.axis)
+        return np.rot90(image, rotations, axes=self.axis)
 
     def apply_to_mask(self, mask, rotations):
         return np.rot90(mask, rotations, axes=self.axis)
 
     def apply_to_wmap(self, wmap, rotations):
-        """One-hot encoded has shape (channels, spatial), so we rotate on
-        axes 2, 3"""
         return np.rot90(wmap, rotations, axes=self.axis)
 
 
@@ -441,7 +434,7 @@ class ElasticDeform(DualTransform):
         sigma=25,
         points=3,
         mode="mirror",
-        axis=(1, 2),
+        axis=(2, 3),
         p=1.0,
         channel_axis=None,
     ):
@@ -454,30 +447,33 @@ class ElasticDeform(DualTransform):
         self.channel_axis = channel_axis
 
     def apply(self, image, mask, weight_map=None):
-        """Convert 4D (multiple channel) input images or wmap
-        into a flattened list of 3D arrays for elasticdeform"""
-        if mask.ndim == 4:
-            # Channel dim is added if using patch data loader
-            mask = mask[0] # [0] to remove channel index
-        if self.channel_axis is not None:
-            num_channels = image.shape[self.channel_axis]
-            # Flatten into a list
-            data = [image[i, ...] for i in range(num_channels)]
-            data.append(mask) 
-        else:
-            data = [image, mask]
-            num_channels = 1
+        """
+        deform_random_grid will perform paired augmentations
+        to all arrays within a list. Multichannel arrays
+        must be split into single channels and passed, so that
+        all input to deform_random_grid is the same
+        
+        
+        pseucode:
+        convert arrays to ch, z, x, y
 
+        """
+        assert image.ndim == 4, "Input image should be shape (C, spatial)"
+        assert mask.ndim == 4, "Input mask should be shape (C, spatial)"
         if weight_map is not None:
-            # n_classes = weight_map.shape[0]
-            # weight_maps = [weight_map[i, ...] for i in range(n_classes)]
-            if weight_map.ndim == 4:
-                weight_map = weight_map[0,...]
-            data.append(weight_map)
+            assert weight_map.ndim == 4, "Input weight map should be shape (C, spatial)"
+            num_channels = [arr.shape[0] for arr in [image, mask, weight_map]]
+            split_arrays = [np.split(arr, arr.shape[0], axis=0) for arr in [image, mask, weight_map]]
+        else:
+            num_channels = [arr.shape[0] for arr in [image, mask]]
+            split_arrays = [np.split(arr, arr.shape[0], axis=0) for arr in [image, mask]]
+    
+        # Flatten list to list of arrays
+        data = [arr for split_arr in split_arrays for arr in split_arr]
 
         # Iterpolate only the raw image pixels
         interpolate_order = np.zeros(len(data), dtype=int)
-        interpolate_order[0:num_channels] = 1
+        interpolate_order[0:num_channels[0]] = 1
         interpolate_order = list(interpolate_order)
         # Perform elasticdeformation
         data = elasticdeform.deform_random_grid(
@@ -489,17 +485,13 @@ class ElasticDeform(DualTransform):
             mode=self.mode,
         )
 
-        # Use slices to stack output raw image back into
-        # a multichannel image, if applicable
-        image = np.stack(data[0:num_channels], axis=0)
-
+        image = np.concatenate(data[0:num_channels[0]], axis=0)
+        mask = np.concatenate(data[num_channels[0]:sum(num_channels[0:2])], axis=0)
         if weight_map is not None:
-            # weight_map = np.stack(data[num_channels+1:], axis=0)
-            weight_map = data[num_channels+1:][0]
-            return image, data[num_channels], weight_map
+            weight_map = np.concatenate(data[sum(num_channels[0:2]):sum(num_channels[0:3])], axis=0)
+            return image, mask, weight_map
         else:
-            return image, data[num_channels]  # [num_channels] is the mask index
-
+            return image, mask
 
 
 class EdgesAndCentroids(DualTransform):
